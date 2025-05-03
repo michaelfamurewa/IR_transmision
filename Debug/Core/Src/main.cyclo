@@ -8,6 +8,6 @@
 ../Core/Src/main.c:434:13:owc_transmit	1
 ../Core/Src/main.c:445:13:enqueue_signal	1
 ../Core/Src/main.c:454:13:process_signals	6
-../Core/Src/main.c:485:6:HAL_GPIO_EXTI_Callback	4
-../Core/Src/main.c:506:6:HAL_TIM_PeriodElapsedCallback	13
-../Core/Src/main.c:599:6:Error_Handler	1
+../Core/Src/main.c:486:6:HAL_GPIO_EXTI_Callback	4
+../Core/Src/main.c:507:6:HAL_TIM_PeriodElapsedCallback	9
+../Core/Src/main.c:581:6:Error_Handler	1

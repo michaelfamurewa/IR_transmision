@@ -29,12 +29,10 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 typedef enum{
-	FRAME_BURST,
+	FRAME_PULSE,
 	FRAME_GAP,
-	ONE_BURST,
-	ONE_GAP,
-	ZERO_BURST,
-	ZERO_GAP
+	BIT_PULSE,
+	BIT_GAP
 } TX_STATE;
 
 typedef enum{
@@ -87,6 +85,8 @@ static uint16_t txDataLength = 0;
 static volatile bool txDataBit = 0;
 static volatile uint8_t txBitIndex = 0;
 static volatile uint16_t txDataIndex = 0;
+static volatile uint16_t txGapLength;
+static volatile uint8_t frameSymbolCount = 0;
 
 /* USER CODE END PV */
 
@@ -436,7 +436,7 @@ static void owc_transmit(uint8_t* data, uint8_t size){
 	systemStatus = TRANSMITTING;
 	memcpy(txDataBuffer, data, size);
 	txDataLength = size;
-	txStatus = FRAME_BURST;
+	txStatus = FRAME_PULSE;
 	__HAL_TIM_SET_AUTORELOAD(&htim4, 100);
 	HAL_TIM_Base_Start_IT(&htim4);
 
@@ -464,6 +464,7 @@ static void process_signals(){
 			}
 			memset(rxDataBuffer, 0, 280);
 			rxDataIndex = 0;
+			triggerCount = 0;
 			systemStatus = IDLE;
 			return;
 		}
@@ -507,7 +508,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 
 	switch(txStatus){
 
-	case FRAME_BURST:
+	case FRAME_PULSE:
 
 		__HAL_TIM_SET_AUTORELOAD(&htim4, 417 - 1);
 		HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
@@ -521,68 +522,49 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
 		__HAL_TIM_SET_AUTORELOAD(&htim4, 417 - 1);
 		__HAL_TIM_SET_COUNTER(&htim4, 0);
+		frameSymbolCount++;
 
 		// End of transmission
-		if(txDataIndex >= txDataLength){
+		if(frameSymbolCount == 3){
 			HAL_TIM_Base_Stop(&htim4);
+			frameSymbolCount = 0;
 			systemStatus = IDLE;
-			return;
 		}
 
-		txDataBit = txDataBuffer[txDataIndex] & (0x80 >> txBitIndex);
-		txStatus = txDataBit ? ONE_BURST : ZERO_BURST;
+		txStatus = BIT_PULSE;
 
 		break;
-	case ONE_BURST:
+	case BIT_PULSE:
 
 		__HAL_TIM_SET_AUTORELOAD(&htim4, 104 - 1);
 		HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 		__HAL_TIM_SET_COUNTER(&htim4, 0);
-		txStatus = ONE_GAP;
+
+		txDataBit = txDataBuffer[txDataIndex] & (0x80 >> txBitIndex);
+		txGapLength = txDataBit ? 104 : 348;
+		txStatus = BIT_GAP;
 
 		break;
-	case ONE_GAP:
+	case BIT_GAP:
 
 		HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
-		__HAL_TIM_SET_AUTORELOAD(&htim4, 104 - 1);
+		__HAL_TIM_SET_AUTORELOAD(&htim4, txGapLength - 1);
 		__HAL_TIM_SET_COUNTER(&htim4, 0);
+		txStatus = BIT_PULSE;
 
 		txBitIndex++;
-		txDataBit = txDataBuffer[txDataIndex] & (0x80 >> txBitIndex);
-		txStatus = txDataBit ? ONE_BURST : ZERO_BURST;
-
-		break;
-	case ZERO_BURST:
-
-		__HAL_TIM_SET_AUTORELOAD(&htim4, 104 - 1);
-		HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-		__HAL_TIM_SET_COUNTER(&htim4, 0);
-		txStatus = ZERO_GAP;
-
-		break;
-	case ZERO_GAP:
-
-		HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
-		__HAL_TIM_SET_AUTORELOAD(&htim4, 348 - 1);
-		__HAL_TIM_SET_COUNTER(&htim4, 0);
-
-		txBitIndex++;
-		txDataBit = txDataBuffer[txDataIndex] & (0x80 >> txBitIndex);
-		txStatus = txDataBit ? ONE_BURST : ZERO_BURST;
+		if(txBitIndex >= 8){
+			txBitIndex = 0;
+			txDataIndex++;
+		}
 
 		break;
 
-	}
-
-	// Move to next byte of data
-	if(txBitIndex >= 8){
-		txBitIndex = 0;
-		txDataIndex++;
 	}
 
 	// Send 2nd frame symbol if no more data
 	if(txDataIndex >= txDataLength){
-		txStatus = FRAME_BURST;
+		txStatus = FRAME_PULSE;
 		return;
 	}
 

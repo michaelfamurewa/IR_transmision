@@ -30,9 +30,9 @@
 /* USER CODE BEGIN PTD */
 typedef enum{
 	FRAME_PULSE,
-	FRAME_GAP,
 	BIT_PULSE,
-	BIT_GAP
+	BIT_GAP,
+	END_OF_TRANSMISSION
 } TX_STATE;
 
 typedef enum{
@@ -62,6 +62,7 @@ typedef struct{
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
+TIM_HandleTypeDef htim5;
 
 UART_HandleTypeDef huart2;
 
@@ -73,7 +74,7 @@ static volatile OWC_STATE systemStatus = IDLE;
 static volatile uint8_t triggerCount = 0;
 static volatile uint16_t lastTriggerTime = 0;
 // RX data variables
-static volatile uint8_t rxDataBuffer[280];
+static volatile uint8_t rxDataBuffer[280] = {0};
 static volatile uint16_t rxDataIndex = 0;
 static volatile uint8_t rxBitIndex = 0;
 static volatile Queue signalBuffer;
@@ -97,10 +98,13 @@ static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM4_Init(void);
+static void MX_TIM5_Init(void);
 /* USER CODE BEGIN PFP */
 static void enqueue_signal(uint16_t);
 static void process_signals();
 static void owc_transmit(uint8_t* data, uint8_t size);
+void reset_rx_state();
+void reset_rx_timeout();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -116,7 +120,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-	char* msg = "Hello!";
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -141,8 +145,9 @@ int main(void)
   MX_TIM2_Init();
   MX_TIM3_Init();
   MX_TIM4_Init();
+  MX_TIM5_Init();
   /* USER CODE BEGIN 2 */
-  owc_transmit(msg, strlen(msg));
+  HAL_TIM_Base_Start(&htim3);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -253,7 +258,7 @@ static void MX_TIM2_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 731;
+  sConfigOC.Pulse = 146;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
@@ -358,6 +363,51 @@ static void MX_TIM4_Init(void)
 }
 
 /**
+  * @brief TIM5 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM5_Init(void)
+{
+
+  /* USER CODE BEGIN TIM5_Init 0 */
+
+  /* USER CODE END TIM5_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM5_Init 1 */
+
+  /* USER CODE END TIM5_Init 1 */
+  htim5.Instance = TIM5;
+  htim5.Init.Prescaler = 0;
+  htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim5.Init.Period = 42000 - 1;
+  htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim5) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim5, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim5, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM5_Init 2 */
+
+  /* USER CODE END TIM5_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -416,8 +466,8 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin : OWC_RX_Pin */
   GPIO_InitStruct.Pin = OWC_RX_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(OWC_RX_GPIO_Port, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
@@ -434,9 +484,11 @@ static void MX_GPIO_Init(void)
 static void owc_transmit(uint8_t* data, uint8_t size){
 
 	systemStatus = TRANSMITTING;
+
 	memcpy(txDataBuffer, data, size);
 	txDataLength = size;
 	txStatus = FRAME_PULSE;
+
 	__HAL_TIM_SET_AUTORELOAD(&htim4, 100);
 	HAL_TIM_Base_Start_IT(&htim4);
 
@@ -457,36 +509,45 @@ static void process_signals(){
 
 		currentSignal = signalBuffer.items[signalBuffer.tail];
 
-		if(currentSignal >= 650){
+		if(currentSignal >= 750){
 
-			for(int i = 0; i < rxDataIndex; i++){
-				printf("%d\n", rxDataBuffer[rxDataIndex]);
-			}
-			memset(rxDataBuffer, 0, 280);
-			rxDataIndex = 0;
-			triggerCount = 0;
-			systemStatus = IDLE;
+			printf("Received: %s\n\r", rxDataBuffer);
+			//HAL_UART_Transmit(&huart2, (uint8_t*)rxDataBuffer, rxDataIndex + 3, HAL_MAX_DELAY);
+			reset_rx_state();
 			return;
 		}
 
 		if(rxBitIndex >= 8){
 			rxDataIndex++;
 			rxBitIndex = 0;
-			uint8_t nextBufferIndex = (signalBuffer.tail + 1) % 64;
-			signalBuffer.tail = nextBufferIndex;
 			continue;
 		}
 
-		uint8_t bitValue = currentSignal <= 350 ? 1 : 0;
+		bool bitValue = currentSignal <= 150 ? 1 : 0;
 		rxDataBuffer[rxDataIndex] |= bitValue ? (0x80 >> rxBitIndex) : 0;
+		uint8_t nextBufferIndex = (signalBuffer.tail + 1) % 64;
+		signalBuffer.tail = nextBufferIndex;
 		rxBitIndex++;
 	}
+}
+
+void reset_rx_state(){
+
+	systemStatus = IDLE;
+	memset(rxDataBuffer, 0, 280);
+	memset(signalBuffer.items, 0, 64);
+	rxBitIndex = 0;
+	rxDataIndex = 0;
+	triggerCount = 0;
+	signalBuffer.head = 0;
+	signalBuffer.tail = 0;
+
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 
 	uint16_t timeStamp =  __HAL_TIM_GET_COUNTER(&htim3);
-	uint16_t duration = timeStamp - lastTriggerTime;
+	uint16_t deltaTime = timeStamp - lastTriggerTime;
 	lastTriggerTime = timeStamp;
 	triggerCount++;
 
@@ -494,81 +555,104 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 		return;
 	}
 
-	if(systemStatus == IDLE && duration >= 650){
+	if(triggerCount >= 3){
+		__HAL_TIM_SET_COUNTER(&htim5, 0);
+		enqueue_signal(deltaTime);
+		triggerCount = 1;
+		return;
+	}
+
+	if(systemStatus == IDLE && (deltaTime >= 250 && deltaTime <= 450)){
 	    systemStatus = RECEIVING;
-	    triggerCount = 1;
+	    HAL_TIM_Base_Start_IT(&htim5);
 	    return;
 	}
 
-	enqueue_signal(duration);
-	triggerCount = 1;
+	if(systemStatus == RECEIVING && (deltaTime >= 250 && deltaTime <= 450)){
+		HAL_TIM_Base_Stop_IT(&htim5);
+		enqueue_signal(1000);
+		return;
+	}
+
+	//reset_rx_timeout();
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
+
+	if(htim == &htim5){
+		HAL_TIM_Base_Stop_IT(&htim5);
+		reset_rx_state();
+		return;
+	}
 
 	switch(txStatus){
 
 	case FRAME_PULSE:
 
-		__HAL_TIM_SET_AUTORELOAD(&htim4, 417 - 1);
+		__HAL_TIM_SET_AUTORELOAD(&htim4, 320 - 1);
 		HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 		__HAL_TIM_SET_COUNTER(&htim4, 0);
-		txStatus = FRAME_GAP;
-		return;
-
-		break;
-	case FRAME_GAP:
-
-		HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
-		__HAL_TIM_SET_AUTORELOAD(&htim4, 417 - 1);
-		__HAL_TIM_SET_COUNTER(&htim4, 0);
 		frameSymbolCount++;
-
-		// End of transmission
-		if(frameSymbolCount == 3){
-			HAL_TIM_Base_Stop(&htim4);
-			frameSymbolCount = 0;
-			systemStatus = IDLE;
-		}
-
-		txStatus = BIT_PULSE;
+		txStatus = frameSymbolCount <= 1 ? BIT_PULSE : END_OF_TRANSMISSION;
 
 		break;
+
 	case BIT_PULSE:
 
-		__HAL_TIM_SET_AUTORELOAD(&htim4, 104 - 1);
+		__HAL_TIM_SET_AUTORELOAD(&htim4, 124 - 1);
 		HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 		__HAL_TIM_SET_COUNTER(&htim4, 0);
 
 		txDataBit = txDataBuffer[txDataIndex] & (0x80 >> txBitIndex);
-		txGapLength = txDataBit ? 104 : 348;
+		txGapLength = txDataBit ? 104 : 208;
 		txStatus = BIT_GAP;
 
 		break;
+
 	case BIT_GAP:
 
 		HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
 		__HAL_TIM_SET_AUTORELOAD(&htim4, txGapLength - 1);
 		__HAL_TIM_SET_COUNTER(&htim4, 0);
 		txStatus = BIT_PULSE;
-
 		txBitIndex++;
+
 		if(txBitIndex >= 8){
 			txBitIndex = 0;
 			txDataIndex++;
 		}
+		if(txDataIndex >= txDataLength){
+			txStatus = FRAME_PULSE;
+		}
 
 		break;
 
-	}
+	default:
 
-	// Send 2nd frame symbol if no more data
-	if(txDataIndex >= txDataLength){
-		txStatus = FRAME_PULSE;
+		HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+		HAL_TIM_Base_Stop(&htim4);
+		frameSymbolCount = 0;
+		txBitIndex = 0;
+		txDataIndex = 0;
+		txDataBit = 0;
+		txDataLength = 0;
+		systemStatus = IDLE;
 		return;
+
 	}
 
+}
 
+int _write(int file, char *ptr, int len)
+{
+  (void)file;
+  int DataIdx;
+
+  for (DataIdx = 0; DataIdx < len; DataIdx++)
+  {
+   ITM_SendChar(*ptr++);
+  }
+  return len;
 }
 
 

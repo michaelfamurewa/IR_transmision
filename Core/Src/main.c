@@ -120,7 +120,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+	char* msg = "This is a test message from the Tx.";
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -157,6 +157,11 @@ int main(void)
 
 	  if(systemStatus == RECEIVING){
 		  process_signals();
+	  }
+
+	  if(systemStatus != TRANSMITTING){
+		  HAL_Delay(1000);
+		  owc_transmit(msg, strlen(msg));
 	  }
 
     /* USER CODE END WHILE */
@@ -383,7 +388,7 @@ static void MX_TIM5_Init(void)
   htim5.Instance = TIM5;
   htim5.Init.Prescaler = 0;
   htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim5.Init.Period = 42000 - 1;
+  htim5.Init.Period = 54600 - 1;
   htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim5) != HAL_OK)
@@ -489,7 +494,7 @@ static void owc_transmit(uint8_t* data, uint8_t size){
 	txDataLength = size;
 	txStatus = FRAME_PULSE;
 
-	__HAL_TIM_SET_AUTORELOAD(&htim4, 100);
+	__HAL_TIM_SET_AUTORELOAD(&htim4, 50);
 	HAL_TIM_Base_Start_IT(&htim4);
 
 }
@@ -523,7 +528,7 @@ static void process_signals(){
 			continue;
 		}
 
-		bool bitValue = currentSignal <= 150 ? 1 : 0;
+		bool bitValue = currentSignal <= 200 ? 1 : 0;
 		rxDataBuffer[rxDataIndex] |= bitValue ? (0x80 >> rxBitIndex) : 0;
 		uint8_t nextBufferIndex = (signalBuffer.tail + 1) % 64;
 		signalBuffer.tail = nextBufferIndex;
@@ -562,19 +567,18 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 		return;
 	}
 
-	if(systemStatus == IDLE && (deltaTime >= 250 && deltaTime <= 450)){
+	if(systemStatus == IDLE && (deltaTime >= 350 && deltaTime <= 650)){
 	    systemStatus = RECEIVING;
 	    HAL_TIM_Base_Start_IT(&htim5);
 	    return;
 	}
 
-	if(systemStatus == RECEIVING && (deltaTime >= 250 && deltaTime <= 450)){
+	if(systemStatus == RECEIVING && (deltaTime >= 350)){
 		HAL_TIM_Base_Stop_IT(&htim5);
 		enqueue_signal(1000);
 		return;
 	}
 
-	//reset_rx_timeout();
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
@@ -589,7 +593,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 
 	case FRAME_PULSE:
 
-		__HAL_TIM_SET_AUTORELOAD(&htim4, 320 - 1);
+		__HAL_TIM_SET_AUTORELOAD(&htim4, 500 - 1);
 		HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 		__HAL_TIM_SET_COUNTER(&htim4, 0);
 		frameSymbolCount++;
@@ -599,12 +603,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 
 	case BIT_PULSE:
 
-		__HAL_TIM_SET_AUTORELOAD(&htim4, 124 - 1);
+		__HAL_TIM_SET_AUTORELOAD(&htim4, 150 - 1);
 		HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 		__HAL_TIM_SET_COUNTER(&htim4, 0);
 
 		txDataBit = txDataBuffer[txDataIndex] & (0x80 >> txBitIndex);
-		txGapLength = txDataBit ? 104 : 208;
+		txGapLength = txDataBit ? 104 : 327;
 		txStatus = BIT_GAP;
 
 		break;

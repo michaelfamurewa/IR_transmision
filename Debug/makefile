@@ -34,34 +34,34 @@ $(wildcard ../makefile.init) \
 $(wildcard ../makefile.targets) \
 
 
-BUILD_ARTIFACT_NAME := NEC_inspiration
+BUILD_ARTIFACT_NAME := Pulse_length
 BUILD_ARTIFACT_EXTENSION := elf
 BUILD_ARTIFACT_PREFIX :=
 BUILD_ARTIFACT := $(BUILD_ARTIFACT_PREFIX)$(BUILD_ARTIFACT_NAME)$(if $(BUILD_ARTIFACT_EXTENSION),.$(BUILD_ARTIFACT_EXTENSION),)
 
 # Add inputs and outputs from these tool invocations to the build variables 
 EXECUTABLES += \
-NEC_inspiration.elf \
+Pulse_length.elf \
 
 MAP_FILES += \
-NEC_inspiration.map \
+Pulse_length.map \
 
 SIZE_OUTPUT += \
 default.size.stdout \
 
 OBJDUMP_LIST += \
-NEC_inspiration.list \
+Pulse_length.list \
 
 
 # All Target
 all: main-build
 
 # Main-build Target
-main-build: NEC_inspiration.elf secondary-outputs
+main-build: Pulse_length.elf secondary-outputs
 
 # Tool invocations
-NEC_inspiration.elf NEC_inspiration.map: $(OBJS) $(USER_OBJS) C:\Users\mfwzk\STM32CubeIDE\workspace_1.17.0\NEC_inspiration\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "NEC_inspiration.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\mfwzk\STM32CubeIDE\workspace_1.17.0\NEC_inspiration\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="NEC_inspiration.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Pulse_length.elf Pulse_length.map: $(OBJS) $(USER_OBJS) C:\Users\mfwzk\STM32CubeIDE\workspace_1.17.0\NEC_inspiration\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "Pulse_length.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\mfwzk\STM32CubeIDE\workspace_1.17.0\NEC_inspiration\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="Pulse_length.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
@@ -70,14 +70,14 @@ default.size.stdout: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
 	@echo 'Finished building: $@'
 	@echo ' '
 
-NEC_inspiration.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "NEC_inspiration.list"
+Pulse_length.list: $(EXECUTABLES) makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-objdump -h -S $(EXECUTABLES) > "Pulse_length.list"
 	@echo 'Finished building: $@'
 	@echo ' '
 
 # Other Targets
 clean:
-	-$(RM) NEC_inspiration.elf NEC_inspiration.list NEC_inspiration.map default.size.stdout
+	-$(RM) Pulse_length.elf Pulse_length.list Pulse_length.map default.size.stdout
 	-@echo ' '
 
 secondary-outputs: $(SIZE_OUTPUT) $(OBJDUMP_LIST)

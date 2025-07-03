@@ -1,5 +1,5 @@
 
-NEC_inspiration.elf:     file format elf32-littlearm
+Pulse_length.elf:     file format elf32-littlearm
 
 Sections:
 Idx Name          Size      VMA       LMA       File off  Algn

@@ -29,7 +29,7 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 typedef enum{
-	FRAME_PULSE,
+	STOP_PULSE,
 	BIT_PULSE,
 	BIT_GAP,
 	END_OF_TRANSMISSION
@@ -62,7 +62,7 @@ typedef struct{
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
-TIM_HandleTypeDef htim5;
+TIM_HandleTypeDef htim6;
 
 UART_HandleTypeDef huart2;
 
@@ -87,7 +87,6 @@ static volatile bool txDataBit = 0;
 static volatile uint8_t txBitIndex = 0;
 static volatile uint16_t txDataIndex = 0;
 static volatile uint16_t txGapLength;
-static volatile uint8_t frameSymbolCount = 0;
 
 /* USER CODE END PV */
 
@@ -98,13 +97,12 @@ static void MX_USART2_UART_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM4_Init(void);
-static void MX_TIM5_Init(void);
+static void MX_TIM6_Init(void);
 /* USER CODE BEGIN PFP */
 static void enqueue_signal(uint16_t);
 static void process_signals();
 static void owc_transmit(uint8_t* data, uint8_t size);
 void reset_rx_state();
-void reset_rx_timeout();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -120,7 +118,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-	char* msg = "This is a test message from the Tx.";
+	char* msg = "The two CANs are compliant with the 2.0A and B (active) specifications with a bitrate up to 1Mbit/s.";
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -145,7 +143,7 @@ int main(void)
   MX_TIM2_Init();
   MX_TIM3_Init();
   MX_TIM4_Init();
-  MX_TIM5_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start(&htim3);
   /* USER CODE END 2 */
@@ -159,10 +157,10 @@ int main(void)
 		  process_signals();
 	  }
 
-	  if(systemStatus != TRANSMITTING){
-		  HAL_Delay(1000);
-		  owc_transmit(msg, strlen(msg));
-	  }
+//	  if(systemStatus != TRANSMITTING){
+//		  HAL_Delay(1000);
+//		  owc_transmit(msg, strlen(msg));
+//	  }
 
     /* USER CODE END WHILE */
 
@@ -368,47 +366,40 @@ static void MX_TIM4_Init(void)
 }
 
 /**
-  * @brief TIM5 Initialization Function
+  * @brief TIM6 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_TIM5_Init(void)
+static void MX_TIM6_Init(void)
 {
 
-  /* USER CODE BEGIN TIM5_Init 0 */
+  /* USER CODE BEGIN TIM6_Init 0 */
 
-  /* USER CODE END TIM5_Init 0 */
+  /* USER CODE END TIM6_Init 0 */
 
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
 
-  /* USER CODE BEGIN TIM5_Init 1 */
+  /* USER CODE BEGIN TIM6_Init 1 */
 
-  /* USER CODE END TIM5_Init 1 */
-  htim5.Instance = TIM5;
-  htim5.Init.Prescaler = 0;
-  htim5.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim5.Init.Period = 54600 - 1;
-  htim5.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim5.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim5) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim5, &sClockSourceConfig) != HAL_OK)
+  /* USER CODE END TIM6_Init 1 */
+  htim6.Instance = TIM6;
+  htim6.Init.Prescaler = 84 - 1;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 650;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
     Error_Handler();
   }
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim5, &sMasterConfig) != HAL_OK)
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim6, &sMasterConfig) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN TIM5_Init 2 */
+  /* USER CODE BEGIN TIM6_Init 2 */
 
-  /* USER CODE END TIM5_Init 2 */
+  /* USER CODE END TIM6_Init 2 */
 
 }
 
@@ -489,13 +480,16 @@ static void MX_GPIO_Init(void)
 static void owc_transmit(uint8_t* data, uint8_t size){
 
 	systemStatus = TRANSMITTING;
-
 	memcpy(txDataBuffer, data, size);
 	txDataLength = size;
-	txStatus = FRAME_PULSE;
 
-	__HAL_TIM_SET_AUTORELOAD(&htim4, 50);
+	// Send start symbol
+	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+	__HAL_TIM_SET_AUTORELOAD(&htim4, 500);
+	__HAL_TIM_SET_COUNTER(&htim4, 0);
 	HAL_TIM_Base_Start_IT(&htim4);
+
+	txStatus = BIT_PULSE;
 
 }
 
@@ -514,10 +508,9 @@ static void process_signals(){
 
 		currentSignal = signalBuffer.items[signalBuffer.tail];
 
-		if(currentSignal >= 750){
+		if(currentSignal == 1000){
 
 			printf("Received: %s\n\r", rxDataBuffer);
-			//HAL_UART_Transmit(&huart2, (uint8_t*)rxDataBuffer, rxDataIndex + 3, HAL_MAX_DELAY);
 			reset_rx_state();
 			return;
 		}
@@ -539,13 +532,14 @@ static void process_signals(){
 void reset_rx_state(){
 
 	systemStatus = IDLE;
-	memset(rxDataBuffer, 0, 280);
-	memset(signalBuffer.items, 0, 64);
 	rxBitIndex = 0;
 	rxDataIndex = 0;
 	triggerCount = 0;
+	currentSignal = 0;
 	signalBuffer.head = 0;
 	signalBuffer.tail = 0;
+	memset(rxDataBuffer, 0, 280);
+	memset(signalBuffer.items, 0, 64);
 
 }
 
@@ -556,48 +550,57 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	lastTriggerTime = timeStamp;
 	triggerCount++;
 
+	// Start of pulse
 	if(triggerCount < 2){
 		return;
 	}
 
+	// End of gap period
 	if(triggerCount >= 3){
-		__HAL_TIM_SET_COUNTER(&htim5, 0);
+		HAL_TIM_Base_Stop_IT(&htim6);
 		enqueue_signal(deltaTime);
 		triggerCount = 1;
 		return;
 	}
 
-	if(systemStatus == IDLE && (deltaTime >= 350 && deltaTime <= 650)){
+	// End of pulse period ------------------
+	if(systemStatus == IDLE && (deltaTime >= 500 && deltaTime <= 750)){
 	    systemStatus = RECEIVING;
-	    HAL_TIM_Base_Start_IT(&htim5);
+	    __HAL_TIM_SET_COUNTER(&htim6, 0);
+	    HAL_TIM_Base_Start_IT(&htim6);
 	    return;
 	}
 
-	if(systemStatus == RECEIVING && (deltaTime >= 350)){
-		HAL_TIM_Base_Stop_IT(&htim5);
+	if(systemStatus == RECEIVING && (deltaTime >= 800)){
+		HAL_TIM_Base_Stop_IT(&htim6);
 		enqueue_signal(1000);
 		return;
 	}
+	else{
+		__HAL_TIM_SET_COUNTER(&htim6, 0);
+		HAL_TIM_Base_Start_IT(&htim6);
+	}
+	// End of pulse period --------------------
 
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 
-	if(htim == &htim5){
-		HAL_TIM_Base_Stop_IT(&htim5);
+	if(htim == &htim6){
+		HAL_TIM_Base_Stop_IT(&htim6);
 		reset_rx_state();
+		//printf("Packet Dropped!\n\r");
 		return;
 	}
 
 	switch(txStatus){
 
-	case FRAME_PULSE:
+	case STOP_PULSE:
 
-		__HAL_TIM_SET_AUTORELOAD(&htim4, 500 - 1);
+		__HAL_TIM_SET_AUTORELOAD(&htim4, 1000 - 1);
 		HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 		__HAL_TIM_SET_COUNTER(&htim4, 0);
-		frameSymbolCount++;
-		txStatus = frameSymbolCount <= 1 ? BIT_PULSE : END_OF_TRANSMISSION;
+		txStatus = END_OF_TRANSMISSION;
 
 		break;
 
@@ -626,7 +629,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 			txDataIndex++;
 		}
 		if(txDataIndex >= txDataLength){
-			txStatus = FRAME_PULSE;
+			txStatus = STOP_PULSE;
 		}
 
 		break;
@@ -634,8 +637,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	default:
 
 		HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
-		HAL_TIM_Base_Stop(&htim4);
-		frameSymbolCount = 0;
+		HAL_TIM_Base_Stop_IT(&htim4);
 		txBitIndex = 0;
 		txDataIndex = 0;
 		txDataBit = 0;
